@@ -1,0 +1,179 @@
+name: Repack
+
+on:
+  push:
+    paths:
+      - repack.sh
+      - .github/workflows/repack.yml
+  workflow_dispatch: ~
+  schedule:
+    - cron: "30 22 * * *"
+
+jobs:
+  fetch:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    outputs:
+      needs_repack: ${{ steps.check_worktree.outputs.needs_repack }}
+      version: ${{ steps.new_source_lock.outputs.ver }}
+    steps:
+      - name: Set up Git
+        run: |
+          git config --global user.name 'github-actions[bot]'
+          git config --global user.email '41898282+github-actions[bot]@users.noreply.github.com'
+
+      - name: Checkout
+        uses: actions/checkout@v3
+
+      - name: Load old version
+        id: old_source_lock
+        run: |
+          echo "::set-output name=ver::$(cat .source.lock | head -n 1)"
+
+      - name: Fetch new version
+        id: new_source_lock
+        run: |
+          rm -f .source.lock
+          echo > .source.lock
+          sh repack.sh -1
+          echo "::set-output name=ver::$(cat .source.lock | head -n 1)"
+
+      - name: Cache
+        id: cache
+        uses: actions/cache@v3
+        with:
+          path: |
+            build/raw
+            .source.lock
+          key: raw_pkg-${{ steps.new_source_lock.outputs.ver }}-${{ github.sha }}
+          restore-keys: raw_pkg-${{ steps.new_source_lock.outputs.ver }}-
+
+      - name: Fetch latest version, download and extract DEB packages
+        id: fetch_packages
+        run: |
+          if [ "$(ls -d build/raw/*${{ steps.new_source_lock.outputs.ver }}*/ | wc -l)" -eq 2 ]; then
+            echo "::set-output name=fetched::false"
+          else
+            rm -rf build/raw/*
+            sh repack.sh 0
+            mv build/raw/*.deb build/dist/
+            echo "::set-output name=fetched::true"
+          fi
+
+      - name: Check worktree
+        id: check_worktree
+        run: |
+          if [ -z "$(git status --porcelain)" ]; then
+            echo '::set-output name=clean::true'
+          else 
+            echo '::set-output name=clean::false'
+          fi
+          if [ "${{ steps.old_source_lock.outputs.ver }}" != "${{ steps.new_source_lock.outputs.ver }}" ] ||
+          ${{ steps.cache.outputs.cache-hit != 'true' }} ||
+          ${{ steps.check_worktree.outputs.clean == 'false' }} || 
+          ${{ github.event_name == 'workflow_dispatch' }} || 
+          ${{ github.event_name == 'push' }}; then
+            echo '::set-output name=needs_repack::true'
+          else
+            echo '::set-output name=needs_repack::false'
+          fi
+
+      - name: Commit and push
+        if: ${{ steps.check_worktree.outputs.clean == 'false' }}
+        run: |
+          git add -A
+          git commit -m 'v${{ steps.new_source_lock.outputs.ver }}'
+          git push
+
+      - name: Tag and push
+        if: ${{ steps.check_worktree.outputs.needs_repack == 'true' }}
+        run: |
+          git tag -f 'v${{ steps.new_source_lock.outputs.ver }}'
+          git push -f --tags
+
+      - name: Fetch changelog
+        if: ${{ steps.check_worktree.outputs.needs_repack == 'true' }}
+        run: |
+          rm -f build/CHANGELOG.html
+
+          echo '<details><summary><h1>CHN Changelog</h1></summary>' > build/CHANGELOG.html
+          echo >> build/CHANGELOG.html
+          curl -sL 'https://linux.wps.cn/wpslinuxlog' | \
+            grep -Pzo '(?<=<div class="log_main">)[\s\S]*?(?=\s*</div>)' | \
+            head --bytes=-1 >> build/CHANGELOG.html
+          echo >> build/CHANGELOG.html
+          echo '</details>' >> build/CHANGELOG.html
+
+          echo >> build/CHANGELOG.html
+
+          echo '<details><summary><h1>INT Changelog</h1></summary>' >> build/CHANGELOG.html
+          echo >> build/CHANGELOG.html
+          curl -sL 'https://www.wps.com/whatsnew/linux/' | \
+            grep -Pzo '<div class="__linux"[^>]*>[\s\S]*?</div>' | \
+            head --bytes=-1 >> build/CHANGELOG.html
+          echo >> build/CHANGELOG.html
+          echo '</details>' >> build/CHANGELOG.html
+
+          sed -i 's/^[ \t]*//g' build/CHANGELOG.html
+          echo >> build/CHANGELOG.html
+
+      - name: Release
+        uses: ncipollo/release-action@v1
+        if: ${{ steps.check_worktree.outputs.needs_repack == 'true' }}
+        with:
+          allowUpdates: true
+          bodyFile: 'build/CHANGELOG.html'
+          tag: v${{ steps.new_source_lock.outputs.ver }}
+
+      - name: Upload raw DEBs
+        uses: ncipollo/release-action@v1
+        if: steps.check_worktree.outputs.needs_repack == 'true'
+        with:
+          allowUpdates: true
+          omitBodyDuringUpdate: true
+          artifactErrorsFailBuild: true
+          artifacts: 'build/dist/*.deb'
+          replacesArtifacts: true
+          tag: v${{ steps.new_source_lock.outputs.ver }}
+
+
+  repack:
+    runs-on: ubuntu-latest
+    needs: [ fetch ]
+    if: needs.fetch.outputs.needs_repack == 'true'
+    strategy:
+      fail-fast: false
+      matrix:
+        stage: [ 1, 2, 3, 4, 5, 6, 7, 8, 9, 10 ]
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+
+      - name: Clear old source lock
+        run: rm -f .source.lock
+
+      - name: Cache
+        id: cache
+        uses: actions/cache@v3
+        with:
+          path: |
+            build/raw
+            .source.lock
+          key: raw_pkg-${{ needs.fetch.outputs.version }}-${{ github.sha }}
+          restore-keys: raw_pkg-${{ needs.fetch.outputs.version }}-
+
+      - name: Repack
+        run: sh repack.sh ${{ matrix.stage }}
+
+      - name: Upload repacked DEB
+        uses: ncipollo/release-action@v1
+        with:
+          allowUpdates: true
+          omitBodyDuringUpdate: true
+          artifactErrorsFailBuild: true
+          artifacts: 'build/dist/*.deb'
+          replacesArtifacts: true
+          tag: v${{ needs.fetch.outputs.version }}
