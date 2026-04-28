@@ -58,7 +58,7 @@ if ! _inside_arch; then
             -w /src \
             --name "$CONTAINER_NAME" \
             "$CONTAINER_IMAGE" \
-            sh repack.sh
+            sh make-anyimage.sh
     fi
 fi
 
@@ -237,21 +237,27 @@ chmod +x "$APPDIR/AppRun"
 echo "$LATEST_VERSION" > "$APPDIR/.appimage-version"
 
 # ── Pick a top-level desktop entry + icon ──────────────────────────
-DESKTOP_SRC="$APPDIR/usr/share/applications/wps-office-wps.desktop"
+# wps-office-prometheus.desktop is the umbrella entry covering all four
+# components, so it makes the natural top-level entry for the AppImage.
+# Per-component entries (wps/et/wpp/pdf) stay under usr/share/applications.
+DESKTOP_SRC="$APPDIR/usr/share/applications/wps-office-prometheus.desktop"
 if [ ! -f "$DESKTOP_SRC" ]; then
     echo "ERROR: $DESKTOP_SRC not found in extracted deb." >&2
     exit 1
 fi
 
-ICON_NAME=$(awk -F= '/^Icon=/{print $2; exit}' "$DESKTOP_SRC")
-ICON_FILE=$(find "$APPDIR/usr/share/icons" \
-    -path "*/256x256/apps/$ICON_NAME*" -type f 2>/dev/null | head -n1)
-[ -n "$ICON_FILE" ] || ICON_FILE=$(find "$APPDIR/usr/share/icons" \
-    -name "$ICON_NAME*" -type f 2>/dev/null | head -n1)
-if [ -z "$ICON_FILE" ]; then
-    echo "ERROR: cannot locate icon $ICON_NAME under usr/share/icons." >&2
+ICON_FILE="$APPDIR/usr/share/icons/hicolor/scalable/apps/wps-office2023-kprometheus.svg"
+if [ ! -f "$ICON_FILE" ]; then
+    echo "ERROR: $ICON_FILE not found in extracted deb." >&2
     exit 1
 fi
+
+# Promote the umbrella desktop entry to AppDir root and drop the copy under
+# usr/share/applications so it isn't shipped twice. quick-sharun's _get_desktop
+# short-circuits when a top-level .desktop already exists, so this also pins
+# our chosen entry against any auto-detection.
+cp "$DESKTOP_SRC" "$APPDIR/$(basename "$DESKTOP_SRC")"
+rm -f "$DESKTOP_SRC"
 
 # ── Fetch quick-sharun and assemble the AppImage ───────────────────
 if command -v quick-sharun >/dev/null 2>&1; then
@@ -269,7 +275,7 @@ export OUTPATH
 export OUTNAME="WPS-Office-${LATEST_VERSION}-${ARCH}.AppImage"
 export DESKTOP="$DESKTOP_SRC"
 export ICON="$ICON_FILE"
-export UPINFO="${UPINFO:-gh-releases-zsync|kem-a|wps-office-repack|latest|*${ARCH}.AppImage.zsync}"
+export UPINFO="${UPINFO:-gh-releases-zsync|kem-a|wps-office-appimage|latest|*${ARCH}.AppImage.zsync}"
 
 echo "=== Assembling AppImage with quick-sharun --make-appimage ==="
 "$QS" --make-appimage
