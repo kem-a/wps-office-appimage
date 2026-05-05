@@ -40,7 +40,27 @@ dispatches by argument or by `argv[0]`:
 ```
 
 Renaming or symlinking the AppImage to `wps`, `et`, `wpp`, or `wpspdf`
-selects the matching component without an extra argument.
+selects the matching component without an extra argument:
+
+```sh
+mv WPS-Office-*.AppImage wps
+ln -s wps et
+ln -s wps wpp
+ln -s wps wpspdf
+./et spreadsheet.xlsx   # launches Spreadsheets directly
+```
+
+This is what the per-component `.desktop` entries (`wps-office-et`,
+`wps-office-wpp`, `wps-office-pdf`) expect, so creating those symlinks
+on a `PATH` directory is what makes "Open with WPS Spreadsheets" etc.
+work for file associations.
+
+If a launch silently does nothing, run with `WPS_DEBUG=1` to surface
+the underlying binary's output:
+
+```sh
+WPS_DEBUG=1 ./WPS-Office-*.AppImage et
+```
 
 ## What the build does
 

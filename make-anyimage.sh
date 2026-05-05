@@ -167,6 +167,16 @@ mkdir -p "$APPDIR"
 cp -al "$EXTRACT_PATH/usr" "$APPDIR/usr"
 cp -al "$EXTRACT_PATH/opt" "$APPDIR/opt"
 
+# WPS ships libstdc++.so.6.0.32 (GCC 13 / CXXABI_1.3.14) and libgcc_s.so.1.
+# On modern hosts (Fedora 43+ etc.) the system mesa/libva drivers need
+# CXXABI_1.3.15 (GCC 14+); when those drivers dlopen into a process that has
+# already loaded WPS's older bundled copy, they fail and crash the GUI. The
+# libstdc++ ABI is backward-compatible, so the host's newer copy works for
+# WPS too — let the dynamic linker resolve them from the host.
+echo "=== Stripping bundled libstdc++/libgcc_s ==="
+rm -f "$APPDIR/opt/kingsoft/wps-office/office6"/libstdc++.so* \
+      "$APPDIR/opt/kingsoft/wps-office/office6"/libgcc_s.so*
+
 # ── Patch wrapper scripts ───────────────────────────────────────────
 # 1. Make gInstallPath relative to the wrapper (so WPS finds its bundled
 #    libs inside the mounted AppImage rather than at /opt on the host).
@@ -180,19 +190,41 @@ for cmd in wps et wpp wpspdf; do
     wrapper="$APPDIR/usr/bin/$cmd"
     [ -f "$wrapper" ] || continue
 
+    # Preserve the upstream shebang (#!/bin/bash — the wrappers use bash arrays
+    # and `function` syntax). Inject the relocation prelude after it. Strip the
+    # `> /dev/null 2>&1` redirects so that `WPS_DEBUG=1` shows the binary's real
+    # output; otherwise the prelude redirects everything to /dev/null itself.
     {
-        printf '#!/bin/sh\n'
+        head -n 1 "$wrapper"
         cat <<'PRELUDE'
 currdir=$(dirname "$(readlink -f "$0")")
 . "$currdir/../../opt/kingsoft/wps-office/office6/fcitx5xwayland.sh"
+[ -n "${WPS_DEBUG:-}" ] || exec >/dev/null 2>&1
 PRELUDE
         sed \
             -e '1d' \
             -e 's#gInstallPath=/opt/kingsoft/wps-office#gInstallPath="$currdir/../../opt/kingsoft/wps-office"#' \
+            -e 's#> /dev/null 2>&1##g' \
             "$wrapper"
     } > "$wrapper.new"
     mv "$wrapper.new" "$wrapper"
     chmod +x "$wrapper"
+done
+
+# Rewrite hardcoded `Exec=/usr/bin/<cmd>` paths in the bundled .desktop files
+# to bare command names. Absolute host paths break "Open with…" because the
+# host has no /usr/bin/wps; bare names let appimaged / xdg-desktop-menu
+# substitute the AppImage path (or a same-directory argv[0] symlink) on
+# integration. Done here so the umbrella copy at AppDir root inherits the fix.
+echo "=== Patching desktop entries ==="
+for desktop in "$APPDIR/usr/share/applications"/wps-office-*.desktop; do
+    [ -f "$desktop" ] || continue
+    sed -i \
+        -e 's#^Exec=/usr/bin/wps #Exec=wps #' \
+        -e 's#^Exec=/usr/bin/et #Exec=et #' \
+        -e 's#^Exec=/usr/bin/wpp #Exec=wpp #' \
+        -e 's#^Exec=/usr/bin/wpspdf #Exec=wpspdf #' \
+        "$desktop"
 done
 
 # ── Custom AppRun: dispatch to wps/et/wpp/wpspdf ────────────────────
@@ -205,6 +237,19 @@ unset ARGV0
 _is_wps_cmd() {
     case "$1" in et|wpp|wps|wpspdf) return 0 ;; esac
     return 1
+}
+
+# Pick component by file extension so `./AppImage file.xlsx` routes to et,
+# `./AppImage file.pptx` to wpp, etc. — instead of always defaulting to wps
+# (which silently rejects non-Writer formats).
+_pick_by_ext() {
+    ext=${1##*.}
+    case "$ext" in
+        xls|xlsx|xlsm|xlsb|xlt|xltx|xltm|csv|et|ett|uos|uof) echo et ;;
+        ppt|pptx|pptm|pps|ppsx|pot|potx|potm|dps|dpt|uop)    echo wpp ;;
+        pdf)                                                  echo wpspdf ;;
+        *)                                                    echo wps ;;
+    esac
 }
 
 if _is_wps_cmd "${ARG0##*/}"; then
@@ -227,7 +272,7 @@ else
             exit 0
             ;;
     esac
-    BIN=wps
+    BIN=$(_pick_by_ext "${1:-}")
 fi
 
 exec "$APPDIR/usr/bin/$BIN" "$@"

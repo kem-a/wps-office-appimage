@@ -1,25 +1,12 @@
-# Build output
 AppDir/
 build*/
 dist/
 squashfs-root/
 squashfs-*.img
-
-# AppImage artifacts
 *.[Aa]pp[Ii]mage
 *.[Aa]pp[Ii]mage.zsync
 appimagetool
-
-# Editor and local caches
 .vscode/
 .directory
 .c[a-z]*/
-
-# Local notes and logs
-*ns.md
-*RE.md
-*DE.md
 *.log
-
-# Scratch
-samples/
