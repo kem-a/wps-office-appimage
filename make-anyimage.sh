@@ -194,16 +194,42 @@ for cmd in wps et wpp wpspdf; do
     # and `function` syntax). Inject the relocation prelude after it. Strip the
     # `> /dev/null 2>&1` redirects so that `WPS_DEBUG=1` shows the binary's real
     # output; otherwise the prelude redirects everything to /dev/null itself.
+    # Quote ${gInstallPath}/office6/${gApp} on every call site — upstream leaves
+    # it unquoted, which word-splits and aborts launch when the AppImage mount
+    # path contains spaces (e.g. AppImage filename with a space, or unpacked
+    # under "~/My Apps/").
     {
         head -n 1 "$wrapper"
         cat <<'PRELUDE'
 currdir=$(dirname "$(readlink -f "$0")")
 . "$currdir/../../opt/kingsoft/wps-office/office6/fcitx5xwayland.sh"
+[ -n "${WPS_DEBUG:-}" ] && echo "[wps-wrapper] argv0=[$0] args=[$*]" >&2
+# WPS 12.x: et/wpp/wpspdf binaries silently exit when invoked directly. The
+# umbrella `wpsoffice` binary launches the right component only when argv[0]
+# is the bare basename and `/prometheus` is the first arg. Intercept here so
+# we never reach upstream run() for these three. `wps` works as-is.
+case "${0##*/}" in
+    et|wpp|wpspdf)
+        unset GIO_LAUNCHED_DESKTOP_FILE
+        [ -n "${WPS_DEBUG:-}" ] || exec >/dev/null 2>&1
+        exec -a "${0##*/}" \
+            "$currdir/../../opt/kingsoft/wps-office/office6/wpsoffice" \
+            /prometheus "$@"
+        ;;
+esac
 [ -n "${WPS_DEBUG:-}" ] || exec >/dev/null 2>&1
 PRELUDE
         sed \
             -e '1d' \
             -e 's#gInstallPath=/opt/kingsoft/wps-office#gInstallPath="$currdir/../../opt/kingsoft/wps-office"#' \
+            -e 's#"\${gInstallPath}/office6/\${gApp}"#${gInstallPath}/office6/${gApp}#g' \
+            -e 's#\${gInstallPath}/office6/\${gApp}#"${gInstallPath}/office6/${gApp}"#g' \
+            -e 's#"\${gInstallPath}/office6/wpscloudsvr"#${gInstallPath}/office6/wpscloudsvr#g' \
+            -e 's#\${gInstallPath}/office6/wpscloudsvr#"${gInstallPath}/office6/wpscloudsvr"#g' \
+            -e 's#"\${gInstallPath}/office6/wpsdoccenter"#${gInstallPath}/office6/wpsdoccenter#g' \
+            -e 's#\${gInstallPath}/office6/wpsdoccenter#"${gInstallPath}/office6/wpsdoccenter"#g' \
+            -e 's#"\${gInstallPath}/office6/oa/wpsoaassist.sh"#${gInstallPath}/office6/oa/wpsoaassist.sh#g' \
+            -e 's#\${gInstallPath}/office6/oa/wpsoaassist.sh#"${gInstallPath}/office6/oa/wpsoaassist.sh"#g' \
             -e 's#> /dev/null 2>&1##g' \
             "$wrapper"
     } > "$wrapper.new"
@@ -233,6 +259,8 @@ cat > "$APPDIR/AppRun" <<'APPRUN'
 APPDIR=$(cd "${0%/*}" && echo "$PWD")
 ARG0="${ARGV0:-$0}"
 unset ARGV0
+[ -n "${WPS_DEBUG:-}" ] && echo "[AppRun] ARG0=[$ARG0] args=[$*]" >&2
+. "$APPDIR/opt/kingsoft/wps-office/office6/fcitx5xwayland.sh"
 
 _is_wps_cmd() {
     case "$1" in et|wpp|wps|wpspdf) return 0 ;; esac
@@ -275,7 +303,9 @@ else
     BIN=$(_pick_by_ext "${1:-}")
 fi
 
-exec "$APPDIR/usr/bin/$BIN" "$@"
+unset GIO_LAUNCHED_DESKTOP_FILE
+[ -n "${WPS_DEBUG:-}" ] || exec >/dev/null 2>&1
+exec "$APPDIR/opt/kingsoft/wps-office/office6/$BIN" /prometheus "$@"
 APPRUN
 chmod +x "$APPDIR/AppRun"
 
