@@ -1,4 +1,4 @@
-# WPS Office AppImage
+# Unofficial WPS Office AppImage
 
 Builds a portable AppImage of WPS Office (Chinese edition) using
 [sharun](https://github.com/VHSgunzo/sharun) infrastructure
@@ -8,7 +8,7 @@ Builds a portable AppImage of WPS Office (Chinese edition) using
 The Chinese edition is used as the source because it ships full
 `zh_CN` localization and the complete set of templates and dictionaries.
 
-## Proprietary warning
+## /!\ Proprietary warning /!\
 
 WPS Office is proprietary software. Use at your own risk.
 
@@ -39,59 +39,13 @@ dispatches by argument or by `argv[0]`:
 ./WPS-Office-*.AppImage --help
 ```
 
-Renaming or symlinking the AppImage to `wps`, `et`, `wpp`, or `wpspdf`
-selects the matching component without an extra argument:
-
-```sh
-mv WPS-Office-*.AppImage wps
-ln -s wps et
-ln -s wps wpp
-ln -s wps wpspdf
-./et spreadsheet.xlsx   # launches Spreadsheets directly
-```
-
-This is what the per-component `.desktop` entries (`wps-office-et`,
-`wps-office-wpp`, `wps-office-pdf`) expect, so creating those symlinks
-on a `PATH` directory is what makes "Open with WPS Spreadsheets" etc.
-work for file associations.
-
-If a launch silently does nothing, run with `WPS_DEBUG=1` to surface
-the underlying binary's output:
+## Debug
 
 ```sh
 WPS_DEBUG=1 ./WPS-Office-*.AppImage et
 ```
 
-## What the build does
-
-1. Resolves the latest CHN `.deb` URL from `linux.wps.cn` (signed with
-   the AUR `wps-office-cn` security key, fallback to `.source.lock`).
-2. Downloads and extracts the `.deb` into `build/raw/`.
-3. Copies the contents into `build/AppDir/` via hard links.
-4. Patches the `wps`, `et`, `wpp`, `wpspdf` wrapper scripts:
-   * fallback `gInstallPath` rewritten to a path relative to the wrapper
-     so WPS finds its bundled libraries inside the AppImage rather than
-     at `/opt` on the host;
-   * `src/fcitx5xwayland.sh` is sourced for IM support on Wayland.
-5. Installs a custom `AppRun` that dispatches by `argv[0]` or `$1`.
-6. Calls `quick-sharun --make-appimage` to assemble the AppImage with
-   `dwarfs` compression and `uruntime`. WPS already ships its own Qt
-   and runtime libraries inside `/opt/kingsoft/wps-office/` with
-   `$ORIGIN`-relative `RPATH`s, so `lib4bin` deployment is intentionally
-   skipped to avoid duplicating or breaking the bundled stack.
-
 ## Official website
 
 Chinese: [linux.wps.cn](https://linux.wps.cn)
 International: [www.wps.com/office/linux/](https://www.wps.com/office/linux/)
-
-## Fonts
-
-WPS Office for Linux used to be distributed with a set of fonts:
-[wps-fonts](https://github.com/Rongronggg9/wps-fonts).
-
-## Credits
-
-Idea forked from [Rongronggg9/wps-office-repack](https://github.com/Rongronggg9/wps-office-repack)
-and rebuilt entirely around an AppImage workflow instead of repacked
-`.deb` packages.
