@@ -1,13 +1,9 @@
 name: Repack
 
 on:
-  push:
-    paths:
-      - repack.sh
-      - .github/workflows/repack.yml
+  release:
+    types: [published]
   workflow_dispatch: ~
-  schedule:
-    - cron: "30 22 * * *"
 
 jobs:
   fetch:
@@ -29,7 +25,7 @@ jobs:
       - name: Load old version
         id: old_source_lock
         run: |
-          echo "::set-output name=ver::$(cat .source.lock | head -n 1)"
+          echo "ver=$(cat .source.lock | head -n 1)" >> "$GITHUB_OUTPUT"
 
       - name: Fetch new version
         id: new_source_lock
@@ -37,7 +33,7 @@ jobs:
           rm -f .source.lock
           echo > .source.lock
           sh repack.sh -1
-          echo "::set-output name=ver::$(cat .source.lock | head -n 1)"
+          echo "ver=$(cat .source.lock | head -n 1)" >> "$GITHUB_OUTPUT"
 
       - name: Cache
         id: cache
@@ -53,30 +49,30 @@ jobs:
         id: fetch_packages
         run: |
           if [ "$(ls -d build/raw/*${{ steps.new_source_lock.outputs.ver }}*/ | wc -l)" -eq 2 ]; then
-            echo "::set-output name=fetched::false"
+            echo "fetched=false" >> "$GITHUB_OUTPUT"
           else
             rm -rf build/raw/*
             sh repack.sh 0
             mv build/raw/*.deb build/dist/
-            echo "::set-output name=fetched::true"
+            echo "fetched=true" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Check worktree
         id: check_worktree
         run: |
           if [ -z "$(git status --porcelain)" ]; then
-            echo '::set-output name=clean::true'
-          else 
-            echo '::set-output name=clean::false'
+            echo 'clean=true' >> "$GITHUB_OUTPUT"
+          else
+            echo 'clean=false' >> "$GITHUB_OUTPUT"
           fi
           if [ "${{ steps.old_source_lock.outputs.ver }}" != "${{ steps.new_source_lock.outputs.ver }}" ] ||
           ${{ steps.cache.outputs.cache-hit != 'true' }} ||
-          ${{ steps.check_worktree.outputs.clean == 'false' }} || 
-          ${{ github.event_name == 'workflow_dispatch' }} || 
-          ${{ github.event_name == 'push' }}; then
-            echo '::set-output name=needs_repack::true'
+          [ -n "$(git status --porcelain)" ] ||
+          ${{ github.event_name == 'workflow_dispatch' }} ||
+          ${{ github.event_name == 'release' }}; then
+            echo 'needs_repack=true' >> "$GITHUB_OUTPUT"
           else
-            echo '::set-output name=needs_repack::false'
+            echo 'needs_repack=false' >> "$GITHUB_OUTPUT"
           fi
 
       - name: Commit and push
