@@ -1,6 +1,13 @@
+<!-- Core project info -->
+[![Download](https://img.shields.io/badge/Download-latest-blue)](https://github.com/kem-a/wps-office-appimage/releases/latest)
+[![Release](https://img.shields.io/github/v/release/kem-a/wps-office-appimage?semver)](https://github.com/kem-a/wps-office-appimage/releases/latest)
+[![License](https://img.shields.io/github/license/kem-a/wps-office-appimage)](https://github.com/kem-a/wps-office-appimage/blob/main/LICENSE)
+[![AnyLinux](https://img.shields.io/badge/AnyLinux-compatible-green?logo=linux&logoColor=white)](https://pkgforge-dev.github.io/Anylinux-AppImages/)
+[![Stars](https://img.shields.io/github/stars/kem-a/wps-office-appimage?style=social)](https://github.com/kem-a/wps-office-appimage/stargazers)
+
 # Unofficial WPS Office AppImage
 
-Builds a portable AppImage of WPS Office (Chinese edition) using
+Builds a portable AppImage of WPS Office **(Chinese edition)** using
 [sharun](https://github.com/VHSgunzo/sharun) infrastructure
 (`uruntime` + `dwarfs`) via
 [`quick-sharun`](https://github.com/pkgforge-dev/Anylinux-AppImages).
@@ -8,9 +15,11 @@ Builds a portable AppImage of WPS Office (Chinese edition) using
 The Chinese edition is used as the source because it ships full
 `zh_CN` localization and the complete set of templates and dictionaries.
 
+<img src="https://res-academy.cache.wpscdn.com/images/seo_posts/20230706/65692f1ceb3fdcbad777be45273b0baa.png" />
+
 ## /!\ Proprietary warning /!\
 
-WPS Office is proprietary software. Use at your own risk.
+**WPS Office is proprietary software. Use at your own risk.**
 
 ## Build
 
