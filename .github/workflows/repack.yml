@@ -1,12 +1,55 @@
 name: Build AppImage
 
 on:
+  push:
+    branches: [master]
+    paths:
+      - .source.lock
   release:
     types: [published]
   workflow_dispatch: ~
 
 jobs:
+  release:
+    # On a .source.lock change, cut a release from the version it pins.
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    outputs:
+      tag: ${{ steps.ver.outputs.tag }}
+      created: ${{ steps.create.outputs.created }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Resolve tag from .source.lock
+        id: ver
+        run: echo "tag=v$(head -n1 .source.lock)" >> "$GITHUB_OUTPUT"
+
+      - name: Create release
+        id: create
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag='${{ steps.ver.outputs.tag }}'
+          if gh release view "$tag" >/dev/null 2>&1; then
+            echo "Release $tag already exists; nothing to do."
+            echo "created=false" >> "$GITHUB_OUTPUT"
+          else
+            gh release create "$tag" --target "$GITHUB_SHA" \
+              --title "WPS Office $tag" --generate-notes
+            echo "created=true" >> "$GITHUB_OUTPUT"
+          fi
+
   build:
+    needs: [release]
+    # Build for: a published release, a manual run, or a freshly created release
+    # from a .source.lock change (skip if that release already existed).
+    if: >-
+      always() &&
+      needs.release.result != 'failure' &&
+      (github.event_name != 'push' || needs.release.outputs.created == 'true')
     runs-on: ubuntu-latest
     container:
       image: ghcr.io/pkgforge-dev/archlinux:latest
@@ -20,9 +63,10 @@ jobs:
         run: sh make-anyimage.sh
 
       - name: Upload AppImage to release
-        if: github.event_name == 'release'
+        if: github.event_name == 'release' || github.event_name == 'push'
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ needs.release.outputs.tag }}
           files: |
             build/dist/*.AppImage
             build/dist/*.AppImage.zsync
